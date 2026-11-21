@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1795249485332,
+      "tag": "0000_create_schemesaathi_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795249737663,
+      "tag": "0001_seed_welfare_schemes",
+      "breakpoints": true
+    }
+  ]
+}

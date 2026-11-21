@@ -1,9 +1,6 @@
 /*
  * Tailwind v4 entry: config lives here, with no tailwind.config.js or PostCSS plugin.
- * - Keep every @import in this top block, above @theme and the rest of the file. Install an
- *   npm package before @importing its CSS. Never @import a remote URL (web fonts, CDN CSS): the
- *   build resolves @import from the filesystem. Load those with a <link> in the head() of
- *   src/routes/__root.tsx and name the family in a --font-* token in @theme inline below.
+ * Keep every @import in this top block. Web fonts load via <link> in src/routes/__root.tsx.
  */
 @import "tailwindcss" source(none);
 @source "../src";
@@ -12,31 +9,21 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
- *
- * The design lives in this file: oklch color tokens on the shadcn variables
- * (--background, --foreground, --primary, --secondary, --muted, --accent, ...) plus
- * new tokens as needed, font tokens, and custom styles and animations.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * SchemeSaathi civic design system.
+ * Deep Sovereign Navy (trust), Saffron Amber (action), Verified Emerald (benefits).
  */
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -57,6 +44,28 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-ring-offset-background: var(--background);
+
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-line: var(--ink-line);
+  --color-saffron: var(--saffron);
+  --color-saffron-foreground: var(--saffron-foreground);
+  --color-saffron-text: var(--saffron-text);
+  --color-saffron-soft: var(--saffron-soft);
+  --color-emerald: var(--emerald);
+  --color-emerald-foreground: var(--emerald-foreground);
+  --color-emerald-text: var(--emerald-text);
+  --color-emerald-soft: var(--emerald-soft);
+  --color-indigo-soft: var(--indigo-soft);
+  --color-indigo-text: var(--indigo-text);
+  --color-surface-low: var(--surface-low);
+  --color-surface-high: var(--surface-high);
+  --color-outline: var(--outline);
+  --color-google-surface: var(--google-surface);
+  --color-google-border: var(--google-border);
+  --color-google-text: var(--google-text);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -70,86 +79,137 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --shadow-card: 0 1px 3px color-mix(in oklab, var(--primary) 6%, transparent);
+  --shadow-lift: 0 8px 24px -4px color-mix(in oklab, var(--primary) 12%, transparent);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --radius: 0.375rem;
+  --background: oklch(0.983 0.008 278.6);
+  --foreground: oklch(0.224 0.043 255.1);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
+  --card-foreground: oklch(0.224 0.043 255.1);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
-}
+  --popover-foreground: oklch(0.224 0.043 255.1);
+  --primary: oklch(0.275 0.056 249.8);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.948 0.024 265.6);
+  --secondary-foreground: oklch(0.275 0.056 249.8);
+  --muted: oklch(0.967 0.016 266.3);
+  --muted-foreground: oklch(0.42 0.02 258.4);
+  --accent: oklch(0.948 0.024 265.6);
+  --accent-foreground: oklch(0.275 0.056 249.8);
+  --destructive: oklch(0.506 0.193 27.7);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.912 0.016 255.5);
+  --input: oklch(0.827 0.012 269.5);
+  --ring: oklch(0.275 0.056 249.8);
 
-.dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --ink: oklch(0.187 0.05 247.9);
+  --ink-foreground: oklch(0.96 0.01 255);
+  --ink-muted: oklch(0.72 0.04 254);
+  --ink-line: oklch(0.3 0.05 250);
+  --saffron: oklch(0.631 0.197 40.3);
+  --saffron-foreground: oklch(1 0 0);
+  --saffron-text: oklch(0.499 0.156 40.3);
+  --saffron-soft: oklch(0.955 0.03 45);
+  --emerald: oklch(0.566 0.101 182.5);
+  --emerald-foreground: oklch(1 0 0);
+  --emerald-text: oklch(0.42 0.08 183.4);
+  --emerald-soft: oklch(0.958 0.025 170);
+  --indigo-soft: oklch(0.93 0.033 272.8);
+  --indigo-text: oklch(0.398 0.177 277.4);
+  --surface-low: oklch(0.967 0.016 266.3);
+  --surface-high: oklch(0.932 0.033 262.7);
+  --outline: oklch(0.827 0.012 269.5);
+  /* Google sign-in button brand colours (#FFFFFF / #747775 / #1F1F1F) */
+  --google-surface: oklch(1 0 0);
+  --google-border: oklch(0.561 0.004 145);
+  --google-text: oklch(0.235 0 0);
+
+  --chart-1: oklch(0.275 0.056 249.8);
+  --chart-2: oklch(0.631 0.197 40.3);
+  --chart-3: oklch(0.566 0.101 182.5);
+  --chart-4: oklch(0.649 0.053 254.2);
+  --chart-5: oklch(0.827 0.051 253.9);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.224 0.043 255.1);
+  --sidebar-primary: oklch(0.275 0.056 249.8);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.948 0.024 265.6);
+  --sidebar-accent-foreground: oklch(0.275 0.056 249.8);
+  --sidebar-border: oklch(0.912 0.016 255.5);
+  --sidebar-ring: oklch(0.275 0.056 249.8);
+
+  --gradient-hero: radial-gradient(
+      120% 90% at 100% 0%,
+      color-mix(in oklab, var(--surface-high) 90%, transparent) 0%,
+      transparent 60%
+    ),
+    linear-gradient(180deg, var(--surface-low), var(--background));
+  --gradient-entitlement: linear-gradient(
+    160deg,
+    var(--ink) 0%,
+    color-mix(in oklab, var(--primary) 80%, var(--ink)) 100%
+  );
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
-
+  html {
+    font-size: var(--base-size, 16px);
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+}
+
+@utility font-display {
+  font-family: var(--font-display);
+}
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+@utility eyebrow {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+@utility civic-card {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+@utility civic-card-hover {
+  transition:
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+  &:hover {
+    box-shadow: var(--shadow-lift);
+    border-color: var(--color-outline);
+  }
+}
+@utility bg-hero {
+  background: var(--gradient-hero);
+}
+@utility bg-entitlement {
+  background: var(--gradient-entitlement);
 }
