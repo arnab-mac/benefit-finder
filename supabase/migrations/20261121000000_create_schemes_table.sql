@@ -1,0 +1,501 @@
+CREATE TABLE public.schemes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug text NOT NULL UNIQUE,
+  name text NOT NULL,
+  local_name text,
+  short_name text,
+  ministry text NOT NULL,
+  level text NOT NULL CHECK (level IN ('central','state','centrally_sponsored')),
+  state_code text,
+  category text NOT NULL,
+  benefit_types text[] NOT NULL DEFAULT '{}',
+  benefit_label text NOT NULL,
+  benefit_headline text NOT NULL,
+  benefit_note text,
+  benefit_value integer NOT NULL DEFAULT 0,
+  annual_cash integer NOT NULL DEFAULT 0,
+  summary text NOT NULL,
+  description text NOT NULL,
+  eligibility_summary text NOT NULL,
+  tags text[] NOT NULL DEFAULT '{}',
+  min_age integer,
+  max_age integer,
+  max_income integer,
+  genders text[] NOT NULL DEFAULT '{}',
+  occupations text[] NOT NULL DEFAULT '{}',
+  land_statuses text[] NOT NULL DEFAULT '{}',
+  social_categories text[] NOT NULL DEFAULT '{}',
+  areas text[] NOT NULL DEFAULT '{}',
+  requires_flags text[] NOT NULL DEFAULT '{}',
+  excludes_flags text[] NOT NULL DEFAULT '{}',
+  eligibility_points jsonb NOT NULL DEFAULT '[]',
+  exclusions text[] NOT NULL DEFAULT '{}',
+  documents jsonb NOT NULL DEFAULT '[]',
+  steps jsonb NOT NULL DEFAULT '[]',
+  faqs jsonb NOT NULL DEFAULT '[]',
+  official_url text NOT NULL,
+  helpline text,
+  apply_mode text NOT NULL DEFAULT 'online',
+  is_dbt boolean NOT NULL DEFAULT false,
+  deadline_note text,
+  popularity integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT ON public.schemes TO anon, authenticated;
+GRANT ALL ON public.schemes TO service_role;
+ALTER TABLE public.schemes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Schemes are public" ON public.schemes FOR SELECT TO anon, authenticated USING (true);
+
+CREATE TABLE public.profiles (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name text,
+  state_code text,
+  district text,
+  quiz_answers jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+GRANT ALL ON public.profiles TO service_role;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own profile read" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Own profile insert" ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Own profile update" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, full_name)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'))
+  ON CONFLICT (user_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+CREATE OR REPLACE FUNCTION public.touch_updated_at()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN NEW.updated_at = now(); RETURN NEW; END;
+$$;
+CREATE TRIGGER profiles_touch BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE public.saved_schemes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  scheme_id uuid NOT NULL REFERENCES public.schemes(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, scheme_id)
+);
+GRANT SELECT, INSERT, DELETE ON public.saved_schemes TO authenticated;
+GRANT ALL ON public.saved_schemes TO service_role;
+ALTER TABLE public.saved_schemes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own saved read" ON public.saved_schemes FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Own saved insert" ON public.saved_schemes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Own saved delete" ON public.saved_schemes FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+CREATE TABLE public.applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  scheme_id uuid NOT NULL REFERENCES public.schemes(id) ON DELETE CASCADE,
+  reference_no text,
+  applied_on date NOT NULL DEFAULT current_date,
+  lodged_via text,
+  stage integer NOT NULL DEFAULT 1 CHECK (stage BETWEEN 1 AND 5),
+  status text NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','action_needed','approved','rejected')),
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.applications TO authenticated;
+GRANT ALL ON public.applications TO service_role;
+ALTER TABLE public.applications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own applications read" ON public.applications FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Own applications insert" ON public.applications FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Own applications update" ON public.applications FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Own applications delete" ON public.applications FOR DELETE TO authenticated USING (auth.uid() = user_id);
+CREATE TRIGGER applications_touch BEFORE UPDATE ON public.applications FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE public.benefit_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  scheme_id uuid REFERENCES public.schemes(id) ON DELETE SET NULL,
+  title text NOT NULL,
+  amount integer NOT NULL CHECK (amount > 0),
+  received_on date NOT NULL DEFAULT current_date,
+  bank text,
+  reference text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, DELETE ON public.benefit_payments TO authenticated;
+GRANT ALL ON public.benefit_payments TO service_role;
+ALTER TABLE public.benefit_payments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own payments read" ON public.benefit_payments FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Own payments insert" ON public.benefit_payments FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Own payments delete" ON public.benefit_payments FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+CREATE INDEX saved_schemes_user_idx ON public.saved_schemes(user_id);
+CREATE INDEX applications_user_idx ON public.applications(user_id);
+CREATE INDEX benefit_payments_user_idx ON public.benefit_payments(user_id);ALTER TABLE public.schemes ADD COLUMN housing_statuses text[] NOT NULL DEFAULT '{}';
+
+INSERT INTO public.schemes (
+  slug, name, local_name, short_name, ministry, level, state_code, category, benefit_types,
+  benefit_label, benefit_headline, benefit_note, benefit_value, annual_cash, summary, description,
+  eligibility_summary, tags, min_age, max_age, max_income, genders, occupations, land_statuses,
+  housing_statuses, social_categories, areas, requires_flags, excludes_flags, eligibility_points,
+  exclusions, documents, steps, faqs, official_url, helpline, apply_mode, is_dbt, deadline_note, popularity
+)
+SELECT
+  r.slug, r.name, r.local_name, r.short_name, r.ministry, r.level, r.state_code, r.category, COALESCE(r.benefit_types,'{}'),
+  r.benefit_label, r.benefit_headline, r.benefit_note, COALESCE(r.benefit_value,0), COALESCE(r.annual_cash,0), r.summary, r.description,
+  r.eligibility_summary, COALESCE(r.tags,'{}'), r.min_age, r.max_age, r.max_income, COALESCE(r.genders,'{}'), COALESCE(r.occupations,'{}'), COALESCE(r.land_statuses,'{}'),
+  COALESCE(r.housing_statuses,'{}'), COALESCE(r.social_categories,'{}'), COALESCE(r.areas,'{}'), COALESCE(r.requires_flags,'{}'), COALESCE(r.excludes_flags,'{}'), COALESCE(r.eligibility_points,'[]'),
+  COALESCE(r.exclusions,'{}'), COALESCE(r.documents,'[]'), COALESCE(r.steps,'[]'), COALESCE(r.faqs,'[]'), r.official_url, r.helpline, COALESCE(r.apply_mode,'online'), COALESCE(r.is_dbt,false), r.deadline_note, COALESCE(r.popularity,0)
+FROM jsonb_populate_recordset(null::public.schemes, $seed$[
+{"slug":"pm-kisan","name":"Pradhan Mantri Kisan Samman Nidhi","local_name":"पीएम किसान सम्मान निधि","short_name":"PM-KISAN","ministry":"Ministry of Agriculture & Farmers Welfare","level":"central","category":"agriculture","benefit_types":["dbt"],
+ "benefit_label":"Annual financial assistance","benefit_headline":"₹6,000 / year","benefit_note":"Paid directly to your bank in 3 instalments of ₹2,000","benefit_value":6000,"annual_cash":6000,
+ "summary":"Income support for landholding farmer families, paid straight into their Aadhaar-seeded bank account three times a year.",
+ "description":"PM-KISAN gives every eligible landholding farmer family ₹6,000 a year to help with farm inputs and household needs. The money is sent in three equal instalments of ₹2,000 (April–July, August–November, December–March) directly to the farmer's bank account.",
+ "eligibility_summary":"Farmer families who own cultivable land recorded in their name.",
+ "tags":["Farmers only","e-KYC mandatory","Aadhaar linked"],"min_age":18,"occupations":["farmer"],"land_statuses":["small","large"],"excludes_flags":["income_taxpayer","govt_employee"],
+ "eligibility_points":[{"title":"Landholding farmer family","detail":"Husband, wife and minor children who own cultivable land as per state land records."},{"title":"Aadhaar-linked bank account","detail":"An active bank account seeded with Aadhaar for direct transfer."},{"title":"Land records verified","detail":"Land must be recorded in the applicant's name in state revenue records."},{"title":"e-KYC completed","detail":"OTP, biometric or face-based e-KYC is mandatory to receive instalments."}],
+ "exclusions":["Institutional landholders","Current or former holders of constitutional posts, ministers, MPs, MLAs","Serving or retired government employees (except Group D / MTS)","Pensioners getting ₹10,000 or more per month","People who paid income tax in the last assessment year","Registered professionals such as doctors, engineers, lawyers and CAs"],
+ "documents":[{"name":"Aadhaar card","detail":"Linked to a working mobile number for OTP."},{"name":"Land records (Khatauni / RoR)","detail":"Latest record from the state revenue department."},{"name":"Bank passbook","detail":"Showing account holder name, account number and IFSC."}],
+ "steps":[{"title":"Register","detail":"Self-register on pmkisan.gov.in (Farmers Corner) or visit your nearest CSC."},{"title":"Land verification","detail":"The state patwari / revenue officer verifies your land records."},{"title":"Complete e-KYC","detail":"Finish OTP or biometric e-KYC on the portal or at a CSC."},{"title":"Receive instalments","detail":"₹2,000 is credited to your Aadhaar-linked account every four months."}],
+ "faqs":[{"q":"Can both husband and wife get PM-KISAN?","a":"No. The benefit is per farmer family (husband, wife and minor children), so only one member can receive it."},{"q":"How do I check my payment status?","a":"Use 'Know Your Status' on pmkisan.gov.in with your registration number or Aadhaar."}],
+ "official_url":"https://pmkisan.gov.in","helpline":"155261 / 011-24300606","apply_mode":"both","is_dbt":true,"popularity":100},
+
+{"slug":"ayushman-bharat-pm-jay","name":"Ayushman Bharat Pradhan Mantri Jan Arogya Yojana","local_name":"आयुष्मान भारत","short_name":"AB PM-JAY","ministry":"Ministry of Health & Family Welfare","level":"central","category":"health","benefit_types":["insurance"],
+ "benefit_label":"Cashless hospital cover","benefit_headline":"₹5,00,000 / year","benefit_note":"Per family per year at 30,000+ empanelled hospitals","benefit_value":500000,
+ "summary":"Free, cashless treatment for serious illnesses at government and private empanelled hospitals across India.",
+ "description":"PM-JAY covers hospital stays, surgeries and treatments up to ₹5 lakh per family every year, with no cap on family size or age. It covers 3 days before and 15 days after hospitalisation, including medicines and diagnostics. Eligible families get an Ayushman Card.",
+ "eligibility_summary":"Poor and vulnerable families identified in the SECC 2011 database or holding priority ration cards as notified by your state.",
+ "tags":["No family size limit","Pre-existing illness covered","Cashless"],"requires_flags":["bpl"],
+ "eligibility_points":[{"title":"SECC 2011 listed family","detail":"Rural families with deprivation criteria and urban families in listed occupations."},{"title":"State-notified ration card holders","detail":"Many states extend PM-JAY to all NFSA / priority ration card families."},{"title":"Seniors aged 70+","detail":"All citizens 70 and above are covered separately under Ayushman Vay Vandana."}],
+ "documents":[{"name":"Aadhaar card","detail":"For e-KYC of each family member."},{"name":"Ration card","detail":"Or the PM letter / family ID used to identify eligible families."}],
+ "steps":[{"title":"Check eligibility","detail":"Search your name at beneficiary.nha.gov.in or call 14555."},{"title":"Make your Ayushman Card","detail":"Complete e-KYC on the Ayushman app, at a CSC or an empanelled hospital."},{"title":"Get treated","detail":"Show the card at the Ayushman Mitra desk in any empanelled hospital."}],
+ "faqs":[{"q":"Do I need to pay anything at the hospital?","a":"No. Treatment covered under the package is cashless and paperless for eligible families."}],
+ "official_url":"https://pmjay.gov.in","helpline":"14555","apply_mode":"both","popularity":98},
+
+{"slug":"ayushman-vay-vandana","name":"Ayushman Vay Vandana Card (PM-JAY for Seniors 70+)","short_name":"Vay Vandana","ministry":"Ministry of Health & Family Welfare","level":"central","category":"health","benefit_types":["insurance"],
+ "benefit_label":"Health cover for seniors","benefit_headline":"₹5,00,000 / year","benefit_note":"Every citizen aged 70+, regardless of income","benefit_value":500000,
+ "summary":"Free hospital cover of ₹5 lakh a year for every senior citizen aged 70 and above, whatever their income.",
+ "description":"Since October 2024, all citizens aged 70 years and above can get the Ayushman Vay Vandana card. Families already under PM-JAY get an extra top-up of ₹5 lakh shared among members aged 70+.",
+ "eligibility_summary":"Any Indian citizen aged 70 years or more, based on Aadhaar age.",
+ "tags":["Age 70+","No income limit"],"min_age":70,
+ "eligibility_points":[{"title":"Aged 70 or above","detail":"Age as recorded in Aadhaar."},{"title":"No income test","detail":"Open to all economic groups."}],
+ "exclusions":["Seniors who choose to stay in CGHS, ECHS or CAPF schemes must pick one scheme"],
+ "documents":[{"name":"Aadhaar card","detail":"Used for age and e-KYC."}],
+ "steps":[{"title":"Enrol","detail":"Use the Ayushman app or beneficiary.nha.gov.in and select 'Vay Vandana'."},{"title":"Complete e-KYC","detail":"Aadhaar OTP or face authentication."},{"title":"Download card","detail":"Use it at any empanelled hospital."}],
+ "official_url":"https://beneficiary.nha.gov.in","helpline":"14555","apply_mode":"online","popularity":80},
+
+{"slug":"pm-ujjwala-yojana","name":"Pradhan Mantri Ujjwala Yojana 2.0","local_name":"प्रधानमंत्री उज्ज्वला योजना","short_name":"PMUY","ministry":"Ministry of Petroleum & Natural Gas","level":"central","category":"women","benefit_types":["in_kind","subsidy"],
+ "benefit_label":"Free LPG connection","benefit_headline":"Free connection + ₹300 / cylinder","benefit_note":"Deposit-free connection, first refill and stove; ₹300 subsidy on up to 12 refills a year","benefit_value":3600,"annual_cash":3600,
+ "summary":"Deposit-free LPG gas connection for women from poor households, with a targeted subsidy on refills.",
+ "description":"Ujjwala 2.0 gives an adult woman from a poor household a free LPG connection, first refill and hot plate. Beneficiaries also get a targeted subsidy of ₹300 per 14.2 kg cylinder for up to 12 refills a year.",
+ "eligibility_summary":"Adult women from poor households that do not already have an LPG connection.",
+ "tags":["Women 18+","BPL priority","No existing LPG"],"min_age":18,"genders":["female"],"requires_flags":["bpl","no_lpg"],
+ "eligibility_points":[{"title":"Adult woman applicant","detail":"18 years or older."},{"title":"Poor household","detail":"SC/ST, PMAY-G, AAY, forest dweller, tea garden, or other deprived household (14-point declaration)."},{"title":"No LPG at home","detail":"No one in the household should already have an LPG connection."}],
+ "documents":[{"name":"Aadhaar card","detail":"Of the applicant and adult family members."},{"name":"Ration card","detail":"Or a self-declaration for migrant families."},{"name":"Bank account details","detail":"For subsidy transfer."}],
+ "steps":[{"title":"Apply","detail":"Apply on pmuy.gov.in or at the nearest LPG distributor."},{"title":"KYC","detail":"Distributor completes KYC and verification."},{"title":"Get connection","detail":"Receive cylinder, regulator and stove free of cost."}],
+ "official_url":"https://pmuy.gov.in","helpline":"1800-233-3555","apply_mode":"both","is_dbt":true,"popularity":88},
+
+{"slug":"pmay-gramin","name":"Pradhan Mantri Awas Yojana – Gramin","local_name":"प्रधानमंत्री आवास योजना (ग्रामीण)","short_name":"PMAY-G","ministry":"Ministry of Rural Development","level":"centrally_sponsored","category":"housing","benefit_types":["dbt","subsidy"],
+ "benefit_label":"House construction grant","benefit_headline":"₹1,20,000","benefit_note":"₹1.30 lakh in hilly / NE / difficult areas, plus 90–95 days MGNREGA wages","benefit_value":120000,
+ "summary":"Money to build a pucca house for rural families who are homeless or living in kutcha or damaged houses.",
+ "description":"PMAY-G helps rural families build a pucca house with basic amenities. Assistance of ₹1.20 lakh (plains) or ₹1.30 lakh (hilly states and difficult areas) is paid in instalments to the beneficiary's bank account as construction progresses, with extra support for a toilet under Swachh Bharat Mission.",
+ "eligibility_summary":"Rural households that are homeless or live in kutcha / dilapidated houses, selected from Awaas+ survey lists.",
+ "tags":["Rural","Kutcha house","Paid in stages"],"areas":["rural"],"housing_statuses":["kutcha","homeless"],"excludes_flags":["income_taxpayer","govt_employee"],
+ "eligibility_points":[{"title":"Houseless or kutcha house","detail":"Families living in zero, one or two-room kutcha houses."},{"title":"Listed in Awaas+ survey","detail":"Selection is verified by the Gram Sabha."}],
+ "exclusions":["Families owning a pucca house","Families with a government employee or income taxpayer","Owners of motorised vehicles, mechanised farm equipment or KCC limit of ₹50,000+"],
+ "documents":[{"name":"Aadhaar card","detail":"With consent for use."},{"name":"Bank / post office account","detail":"Linked to Aadhaar."},{"name":"MGNREGA job card","detail":"For wage component."}],
+ "steps":[{"title":"Get listed","detail":"Contact your Gram Panchayat to check the Awaas+ list."},{"title":"Sanction","detail":"Block office sanctions the house after Gram Sabha approval."},{"title":"Build and get paid","detail":"Instalments are released after geo-tagged photos of each stage."}],
+ "official_url":"https://pmayg.nic.in","helpline":"1800-11-6446","apply_mode":"offline","is_dbt":true,"popularity":85},
+
+{"slug":"pmay-urban-2","name":"Pradhan Mantri Awas Yojana – Urban 2.0","short_name":"PMAY-U 2.0","ministry":"Ministry of Housing & Urban Affairs","level":"centrally_sponsored","category":"housing","benefit_types":["subsidy","loan"],
+ "benefit_label":"Housing assistance","benefit_headline":"Up to ₹2,50,000","benefit_note":"For building, buying or renting a house; interest subsidy on home loans","benefit_value":250000,
+ "summary":"Help for urban poor and middle-income families without a pucca house to build, buy or rent a home.",
+ "description":"PMAY-U 2.0 supports urban EWS, LIG and MIG families through beneficiary-led construction, affordable housing, affordable rental housing and an interest subsidy scheme on home loans.",
+ "eligibility_summary":"Urban families with annual income up to ₹9 lakh who do not own a pucca house anywhere in India.",
+ "tags":["Urban","Income < ₹9L","EWS/LIG/MIG"],"areas":["urban"],"max_income":900000,"housing_statuses":["kutcha","rented","homeless"],
+ "eligibility_points":[{"title":"No pucca house","detail":"No family member should own a pucca house anywhere in India."},{"title":"Income band","detail":"EWS up to ₹3 lakh, LIG ₹3–6 lakh, MIG ₹6–9 lakh a year."}],
+ "documents":[{"name":"Aadhaar card","detail":"For all family members."},{"name":"Income certificate","detail":"Or self-declaration."},{"name":"Bank account details","detail":"For subsidy credit."}],
+ "steps":[{"title":"Apply online","detail":"Fill the application on pmay-urban.gov.in."},{"title":"Verification","detail":"Your urban local body verifies your details."},{"title":"Receive support","detail":"Assistance is released in stages or as a loan subsidy."}],
+ "official_url":"https://pmay-urban.gov.in","helpline":"1800-11-3377","apply_mode":"online","popularity":75},
+
+{"slug":"mgnrega","name":"Mahatma Gandhi National Rural Employment Guarantee Act","local_name":"मनरेगा","short_name":"MGNREGA","ministry":"Ministry of Rural Development","level":"centrally_sponsored","category":"employment","benefit_types":["dbt"],
+ "benefit_label":"Guaranteed wage work","benefit_headline":"100 days of paid work","benefit_note":"Per rural household per year, at the state-notified wage rate","benefit_value":25000,
+ "summary":"A legal guarantee of up to 100 days of paid manual work each year for every rural household that asks for it.",
+ "description":"Any adult in a rural household can ask for unskilled work under MGNREGA. Work must be given within 15 days of asking, within 5 km of home where possible, and wages are paid directly to the bank account within 15 days.",
+ "eligibility_summary":"Adult members of rural households willing to do unskilled manual work.",
+ "tags":["Rural","Adults 18+","Job card"],"min_age":18,"areas":["rural"],
+ "eligibility_points":[{"title":"Rural resident","detail":"Living in a rural area covered by a Gram Panchayat."},{"title":"Job card","detail":"Household must register for a free job card."}],
+ "documents":[{"name":"Aadhaar card","detail":"For registration."},{"name":"Photograph","detail":"Of adult household members."},{"name":"Bank / post office account","detail":"For wage payment."}],
+ "steps":[{"title":"Register","detail":"Apply for a job card at your Gram Panchayat."},{"title":"Ask for work","detail":"Submit a written or oral request for work and take a dated receipt."},{"title":"Work and get paid","detail":"Wages are credited within 15 days."}],
+ "faqs":[{"q":"What if I don't get work in 15 days?","a":"You are entitled to an unemployment allowance from the state."}],
+ "official_url":"https://nrega.nic.in","helpline":"1800-345-22-44","apply_mode":"offline","is_dbt":true,"popularity":82},
+
+{"slug":"atal-pension-yojana","name":"Atal Pension Yojana","short_name":"APY","ministry":"Ministry of Finance (PFRDA)","level":"central","category":"social_security","benefit_types":["pension"],
+ "benefit_label":"Guaranteed monthly pension","benefit_headline":"₹1,000 – ₹5,000 / month","benefit_note":"From age 60, with pension continuing to spouse and corpus to nominee","benefit_value":60000,
+ "summary":"A government-guaranteed pension from age 60 for workers who save a small amount every month.",
+ "description":"Join between 18 and 40 and contribute monthly through your savings account. At 60 you receive a fixed pension of ₹1,000 to ₹5,000 a month, depending on your contribution. After you, your spouse gets the same pension and the nominee receives the savings.",
+ "eligibility_summary":"Indian citizens aged 18–40 with a bank account who are not income taxpayers.",
+ "tags":["Age 18–40","Savings account","Auto-debit"],"min_age":18,"max_age":40,"excludes_flags":["income_taxpayer"],
+ "eligibility_points":[{"title":"Age 18 to 40","detail":"Contributions continue until age 60."},{"title":"Savings bank account","detail":"With auto-debit enabled."}],
+ "exclusions":["People who are or have been income taxpayers (from 1 Oct 2022)"],
+ "documents":[{"name":"Aadhaar card","detail":"For KYC."},{"name":"Savings account","detail":"Bank or post office."}],
+ "steps":[{"title":"Visit your bank","detail":"Or use net banking / mobile app."},{"title":"Choose pension amount","detail":"Pick ₹1,000 to ₹5,000 and nominee."},{"title":"Auto-debit","detail":"Monthly contribution is debited automatically."}],
+ "official_url":"https://www.npscra.nsdl.co.in/scheme-details.php","helpline":"1800-889-1030","apply_mode":"both","popularity":70},
+
+{"slug":"pm-jeevan-jyoti-bima","name":"Pradhan Mantri Jeevan Jyoti Bima Yojana","short_name":"PMJJBY","ministry":"Ministry of Finance","level":"central","category":"social_security","benefit_types":["insurance"],
+ "benefit_label":"Life insurance cover","benefit_headline":"₹2,00,000 cover","benefit_note":"For just ₹436 a year, auto-debited","benefit_value":200000,
+ "summary":"Low-cost life insurance of ₹2 lakh for anyone aged 18–50 with a bank account.",
+ "description":"PMJJBY is a one-year renewable life cover of ₹2 lakh for death due to any reason. The premium of ₹436 a year is auto-debited from your bank account.",
+ "eligibility_summary":"Anyone aged 18–50 with a savings bank or post office account.",
+ "tags":["Age 18–50","₹436 / year"],"min_age":18,"max_age":50,
+ "documents":[{"name":"Aadhaar card","detail":"KYC."},{"name":"Savings account","detail":"With consent for auto-debit."}],
+ "steps":[{"title":"Enrol","detail":"At your bank branch, net banking or jansuraksha.gov.in."},{"title":"Auto-renew","detail":"Premium is debited every year in May–June."}],
+ "official_url":"https://jansuraksha.gov.in","helpline":"1800-180-1111","apply_mode":"both","popularity":60},
+
+{"slug":"pm-suraksha-bima","name":"Pradhan Mantri Suraksha Bima Yojana","short_name":"PMSBY","ministry":"Ministry of Finance","level":"central","category":"social_security","benefit_types":["insurance"],
+ "benefit_label":"Accident insurance cover","benefit_headline":"₹2,00,000 cover","benefit_note":"For ₹20 a year; ₹1 lakh for partial disability","benefit_value":200000,
+ "summary":"Accident insurance of ₹2 lakh for just ₹20 a year.",
+ "description":"PMSBY pays ₹2 lakh for accidental death or total disability and ₹1 lakh for partial permanent disability. The ₹20 yearly premium is auto-debited.",
+ "eligibility_summary":"Anyone aged 18–70 with a savings bank or post office account.",
+ "tags":["Age 18–70","₹20 / year"],"min_age":18,"max_age":70,
+ "documents":[{"name":"Aadhaar card","detail":"KYC."},{"name":"Savings account","detail":"For auto-debit."}],
+ "steps":[{"title":"Enrol","detail":"At your bank, post office or jansuraksha.gov.in."},{"title":"Renew yearly","detail":"Premium auto-debited each year."}],
+ "official_url":"https://jansuraksha.gov.in","helpline":"1800-180-1111","apply_mode":"both","popularity":58},
+
+{"slug":"sukanya-samriddhi","name":"Sukanya Samriddhi Yojana","local_name":"सुकन्या समृद्धि योजना","short_name":"SSY","ministry":"Ministry of Finance","level":"central","category":"women","benefit_types":["subsidy"],
+ "benefit_label":"High-interest savings for daughters","benefit_headline":"8.2% interest*","benefit_note":"Tax-free; rate set by government every quarter","benefit_value":0,
+ "summary":"A tax-free savings account for your daughter's education and marriage, with one of the highest small-savings interest rates.",
+ "description":"Parents can open an account for a girl child below 10 years with as little as ₹250 a year (maximum ₹1.5 lakh). Deposits are made for 15 years and the account matures after 21 years. Deposits get tax deduction under section 80C and interest is tax-free.",
+ "eligibility_summary":"Parents or guardians of a girl child below 10 years (up to two daughters).",
+ "tags":["Girl child < 10","Tax-free","Post office / bank"],"requires_flags":["girl_child"],
+ "documents":[{"name":"Birth certificate of the girl","detail":"Required to open the account."},{"name":"Parent's Aadhaar and PAN","detail":"KYC."}],
+ "steps":[{"title":"Open account","detail":"At any post office or authorised bank."},{"title":"Deposit yearly","detail":"Minimum ₹250, maximum ₹1.5 lakh per year for 15 years."}],
+ "official_url":"https://www.indiapost.gov.in","helpline":"1800-266-6868","apply_mode":"offline","popularity":65},
+
+{"slug":"pm-surya-ghar","name":"PM Surya Ghar: Muft Bijli Yojana","local_name":"पीएम सूर्य घर मुफ्त बिजली योजना","short_name":"PM Surya Ghar","ministry":"Ministry of New & Renewable Energy","level":"central","category":"energy","benefit_types":["subsidy","dbt"],
+ "benefit_label":"Rooftop solar subsidy","benefit_headline":"Up to ₹78,000","benefit_note":"Subsidy for 3 kW rooftop solar, up to 300 free units a month","benefit_value":78000,
+ "summary":"A subsidy to put solar panels on your roof and cut your electricity bill to nearly zero.",
+ "description":"Households get ₹30,000 per kW for the first 2 kW and ₹18,000 for the third kW, up to ₹78,000. The subsidy is credited to your bank account after the system is installed and inspected. Collateral-free loans are also available.",
+ "eligibility_summary":"Households that own a house with a suitable roof and a valid electricity connection.",
+ "tags":["Own house","Electricity consumer","DISCOM linked"],"housing_statuses":["pucca"],
+ "eligibility_points":[{"title":"Own house with roof","detail":"Roof suitable for solar panels."},{"title":"Valid electricity connection","detail":"In the applicant's name."},{"title":"No previous solar subsidy","detail":"Not availed any other rooftop solar subsidy."}],
+ "documents":[{"name":"Electricity bill","detail":"Latest bill with consumer number."},{"name":"Aadhaar and bank details","detail":"For subsidy credit."}],
+ "steps":[{"title":"Register","detail":"On pmsuryaghar.gov.in with your consumer number."},{"title":"Choose vendor","detail":"Pick a registered vendor and install."},{"title":"Inspection","detail":"DISCOM inspects and installs net meter."},{"title":"Get subsidy","detail":"Credited within about 30 days."}],
+ "official_url":"https://pmsuryaghar.gov.in","helpline":"15555","apply_mode":"online","is_dbt":true,"popularity":78},
+
+{"slug":"post-matric-scholarship-sc","name":"Post-Matric Scholarship for Scheduled Caste Students","short_name":"PMS-SC","ministry":"Ministry of Social Justice & Empowerment","level":"centrally_sponsored","category":"education","benefit_types":["tuition","dbt"],
+ "benefit_label":"Educational support","benefit_headline":"100% tuition fee","benefit_note":"Plus yearly academic allowance of ₹2,500–₹13,500","benefit_value":50000,
+ "summary":"Full reimbursement of compulsory fees plus an allowance for SC students from Class 11 to PhD.",
+ "description":"SC students studying after Class 10 get their compulsory non-refundable fees reimbursed and an academic allowance depending on the course. Payment is made directly to the student's Aadhaar-seeded account.",
+ "eligibility_summary":"SC students in Class 11 or higher with family income up to ₹2.5 lakh a year.",
+ "tags":["SC students","Income < ₹2.5L","NSP portal"],"occupations":["student"],"social_categories":["sc"],"max_income":250000,
+ "documents":[{"name":"Caste certificate","detail":"Issued by competent authority."},{"name":"Income certificate","detail":"Family income up to ₹2.5 lakh."},{"name":"Previous marksheet and fee receipt","detail":"From your institution."}],
+ "steps":[{"title":"Register on NSP","detail":"Create a One Time Registration on scholarships.gov.in or your state portal."},{"title":"Apply","detail":"Fill the form and upload documents."},{"title":"Institute verification","detail":"Your college verifies the application."}],
+ "official_url":"https://scholarships.gov.in","helpline":"0120-6619540","apply_mode":"online","is_dbt":true,"deadline_note":"Usually opens July–October each academic year","popularity":72},
+
+{"slug":"pm-yasasvi-obc","name":"PM YASASVI Post-Matric Scholarship for OBC, EBC & DNT Students","short_name":"PM YASASVI","ministry":"Ministry of Social Justice & Empowerment","level":"centrally_sponsored","category":"education","benefit_types":["tuition","dbt"],
+ "benefit_label":"Educational support","benefit_headline":"Fees + allowance","benefit_note":"Rates vary by course and state","benefit_value":30000,
+ "summary":"Scholarship for OBC, EBC and DNT students studying after Class 10.",
+ "description":"Covers non-refundable fees and a maintenance allowance for OBC, economically backward and de-notified tribe students in post-matric courses.",
+ "eligibility_summary":"OBC / EBC / DNT students in Class 11 or higher with family income up to ₹2.5 lakh.",
+ "tags":["OBC / EBC / DNT","Income < ₹2.5L"],"occupations":["student"],"social_categories":["obc"],"max_income":250000,
+ "documents":[{"name":"Caste certificate","detail":"OBC / EBC / DNT."},{"name":"Income certificate","detail":"Up to ₹2.5 lakh."}],
+ "steps":[{"title":"Apply online","detail":"Through your state scholarship portal or NSP."},{"title":"Verification","detail":"Institute and district verify."}],
+ "official_url":"https://scholarships.gov.in","helpline":"0120-6619540","apply_mode":"online","is_dbt":true,"popularity":55},
+
+{"slug":"pm-svanidhi","name":"PM Street Vendor's AtmaNirbhar Nidhi","short_name":"PM SVANidhi","ministry":"Ministry of Housing & Urban Affairs","level":"central","category":"business","benefit_types":["loan","subsidy"],
+ "benefit_label":"Working capital loan","benefit_headline":"Up to ₹50,000","benefit_note":"Collateral-free in three tranches, 7% interest subsidy and digital cashback","benefit_value":50000,
+ "summary":"Collateral-free loans for street vendors to restart and grow their business.",
+ "description":"Street vendors can take a first working capital loan and, on repaying it on time, become eligible for bigger loans. Timely repayment earns a 7% interest subsidy and digital payments earn cashback.",
+ "eligibility_summary":"Street vendors vending in urban areas with a vending certificate or recommendation letter.",
+ "tags":["Street vendors","No collateral","Urban"],"requires_flags":["street_vendor"],"areas":["urban"],
+ "documents":[{"name":"Aadhaar card","detail":"Linked to mobile."},{"name":"Vending certificate / ID","detail":"Or letter of recommendation from ULB."}],
+ "steps":[{"title":"Apply","detail":"On pmsvanidhi.mohua.gov.in or at a CSC."},{"title":"Loan sanction","detail":"Lender sanctions and disburses."},{"title":"Repay digitally","detail":"Use UPI to earn cashback and the next loan."}],
+ "official_url":"https://pmsvanidhi.mohua.gov.in","helpline":"1800-11-1979","apply_mode":"both","popularity":62},
+
+{"slug":"pm-mudra-yojana","name":"Pradhan Mantri Mudra Yojana","short_name":"PMMY","ministry":"Ministry of Finance","level":"central","category":"business","benefit_types":["loan"],
+ "benefit_label":"Business loan","benefit_headline":"Up to ₹20,00,000","benefit_note":"Shishu, Kishore, Tarun and Tarun Plus categories — no collateral","benefit_value":2000000,
+ "summary":"Collateral-free loans for small non-farm businesses like shops, workshops and service units.",
+ "description":"Mudra loans are offered by banks, NBFCs and MFIs: Shishu (up to ₹50,000), Kishore (₹50,000–₹5 lakh), Tarun (₹5–10 lakh) and Tarun Plus (₹10–20 lakh for those who repaid a Tarun loan).",
+ "eligibility_summary":"Indian citizens with a non-farm income-generating business plan in manufacturing, trading or services.",
+ "tags":["Self-employed","No collateral"],"min_age":18,"occupations":["self_employed"],
+ "documents":[{"name":"Identity and address proof","detail":"Aadhaar / voter ID."},{"name":"Business plan or quotation","detail":"For machinery or stock."}],
+ "steps":[{"title":"Apply","detail":"At any bank branch or on jansamarth.in."},{"title":"Appraisal","detail":"Bank reviews your plan."},{"title":"Disbursal","detail":"Loan amount credited / MUDRA card issued."}],
+ "official_url":"https://www.mudra.org.in","helpline":"1800-180-1111","apply_mode":"both","popularity":68},
+
+{"slug":"stand-up-india","name":"Stand-Up India","short_name":"Stand-Up India","ministry":"Ministry of Finance","level":"central","category":"business","benefit_types":["loan"],
+ "benefit_label":"Enterprise loan","benefit_headline":"₹10 lakh – ₹1 crore","benefit_note":"For a new (greenfield) business","benefit_value":10000000,
+ "summary":"Bank loans for SC/ST and women entrepreneurs starting a new business.",
+ "description":"Each bank branch supports at least one SC/ST borrower and one woman borrower with a composite loan between ₹10 lakh and ₹1 crore for a new enterprise in manufacturing, services, trading or allied agriculture.",
+ "eligibility_summary":"SC/ST and/or women entrepreneurs aged 18+ setting up a new enterprise.",
+ "tags":["Women / SC / ST","New business"],"min_age":18,"occupations":["self_employed","unemployed","homemaker"],"requires_flags":["women_or_sc_st"],
+ "documents":[{"name":"Identity and caste proof","detail":"Where applicable."},{"name":"Project report","detail":"Business plan with costs."}],
+ "steps":[{"title":"Register","detail":"On standupmitra.in."},{"title":"Connect with bank","detail":"Portal links you to lenders and support agencies."}],
+ "official_url":"https://www.standupmitra.in","helpline":"1800-180-1111","apply_mode":"online","popularity":45},
+
+{"slug":"lakhpati-didi","name":"Lakhpati Didi Initiative (DAY-NRLM)","local_name":"लखपति दीदी","short_name":"Lakhpati Didi","ministry":"Ministry of Rural Development","level":"central","category":"women","benefit_types":["training","loan"],
+ "benefit_label":"Income goal & micro-credit","benefit_headline":"₹1,00,000+ / year","benefit_note":"Skill training, interest subvention and enterprise support for SHG women","benefit_value":100000,
+ "summary":"Helps women in self-help groups build livelihoods that earn at least ₹1 lakh a year.",
+ "description":"Under DAY-NRLM, SHG members get livelihood planning, skill training (including drone operation, LED making, plumbing), access to bank credit with interest subvention, and market linkages.",
+ "eligibility_summary":"Women members of self-help groups under the National Rural Livelihoods Mission.",
+ "tags":["SHG members","Rural women","Interest subvention"],"genders":["female"],"areas":["rural"],"requires_flags":["shg_member"],
+ "documents":[{"name":"SHG membership details","detail":"From your village organisation."},{"name":"Aadhaar and bank account","detail":"KYC."}],
+ "steps":[{"title":"Join an SHG","detail":"Contact your block mission office or CRP."},{"title":"Livelihood plan","detail":"Prepare an enterprise plan with your VO."},{"title":"Training and credit","detail":"Get skills and bank linkage."}],
+ "official_url":"https://lakhpatididi.gov.in","helpline":"1800-11-6446","apply_mode":"offline","popularity":64},
+
+{"slug":"old-age-pension-ignoaps","name":"Indira Gandhi National Old Age Pension Scheme","short_name":"IGNOAPS","ministry":"Ministry of Rural Development (NSAP)","level":"centrally_sponsored","category":"social_security","benefit_types":["pension","dbt"],
+ "benefit_label":"Monthly pension","benefit_headline":"₹200 – ₹500 / month","benefit_note":"Central share; most states add more","benefit_value":2400,"annual_cash":2400,
+ "summary":"A monthly pension for elderly people from below-poverty-line households.",
+ "description":"Under the National Social Assistance Programme, BPL senior citizens get ₹200 a month (age 60–79) or ₹500 a month (age 80+) from the Centre. States add their own top-up, so the actual amount is usually higher.",
+ "eligibility_summary":"Persons aged 60 or above belonging to BPL households.",
+ "tags":["Age 60+","BPL"],"min_age":60,"requires_flags":["bpl"],
+ "documents":[{"name":"Age proof","detail":"Aadhaar / birth certificate."},{"name":"BPL proof","detail":"BPL card or ration card."},{"name":"Bank / post office account","detail":"For DBT."}],
+ "steps":[{"title":"Apply","detail":"At the Gram Panchayat / municipal office or state pension portal."},{"title":"Verification","detail":"Block or district social welfare office verifies."}],
+ "official_url":"https://nsap.nic.in","apply_mode":"offline","is_dbt":true,"popularity":66},
+
+{"slug":"widow-pension-ignwps","name":"Indira Gandhi National Widow Pension Scheme","short_name":"IGNWPS","ministry":"Ministry of Rural Development (NSAP)","level":"centrally_sponsored","category":"social_security","benefit_types":["pension","dbt"],
+ "benefit_label":"Monthly pension","benefit_headline":"₹300 / month","benefit_note":"Central share; states add more","benefit_value":3600,"annual_cash":3600,
+ "summary":"Monthly pension for widows from BPL households.",
+ "description":"Widows aged 40–79 from BPL households get ₹300 a month from the Centre, with additional state top-ups. At 80 they move to the old age pension of ₹500.",
+ "eligibility_summary":"Widows aged 40–79 belonging to BPL households.",
+ "tags":["Widows","Age 40–79","BPL"],"min_age":40,"max_age":79,"genders":["female"],"requires_flags":["widow","bpl"],
+ "documents":[{"name":"Husband's death certificate","detail":"Required."},{"name":"BPL proof","detail":"BPL / ration card."}],
+ "steps":[{"title":"Apply","detail":"At your block / municipal office or state portal."},{"title":"Verification","detail":"Social welfare officer verifies."}],
+ "official_url":"https://nsap.nic.in","apply_mode":"offline","is_dbt":true,"popularity":50},
+
+{"slug":"disability-pension-igndps","name":"Indira Gandhi National Disability Pension Scheme","short_name":"IGNDPS","ministry":"Ministry of Rural Development (NSAP)","level":"centrally_sponsored","category":"social_security","benefit_types":["pension","dbt"],
+ "benefit_label":"Monthly pension","benefit_headline":"₹300 / month","benefit_note":"Central share; states add more","benefit_value":3600,"annual_cash":3600,
+ "summary":"Monthly pension for persons with severe disabilities from BPL households.",
+ "description":"Persons aged 18–79 with severe or multiple disabilities (80% or more) from BPL households get ₹300 a month from the Centre plus state top-up.",
+ "eligibility_summary":"Persons aged 18–79 with 80%+ disability from BPL households.",
+ "tags":["PwD","BPL","UDID"],"min_age":18,"max_age":79,"requires_flags":["pwd","bpl"],
+ "documents":[{"name":"Disability certificate / UDID card","detail":"Showing 80% or more disability."},{"name":"BPL proof","detail":"BPL / ration card."}],
+ "steps":[{"title":"Apply","detail":"At your block / municipal office."},{"title":"Verification","detail":"District social welfare office verifies."}],
+ "official_url":"https://nsap.nic.in","apply_mode":"offline","is_dbt":true,"popularity":48},
+
+{"slug":"pm-fasal-bima","name":"Pradhan Mantri Fasal Bima Yojana","short_name":"PMFBY","ministry":"Ministry of Agriculture & Farmers Welfare","level":"central","category":"agriculture","benefit_types":["insurance"],
+ "benefit_label":"Crop insurance","benefit_headline":"Premium from 1.5%","benefit_note":"Farmer pays 2% (Kharif), 1.5% (Rabi), 5% (commercial crops)","benefit_value":0,
+ "summary":"Low-premium insurance that pays farmers when crops are lost to drought, flood, pests or disease.",
+ "description":"PMFBY covers yield losses, prevented sowing and post-harvest losses from natural calamities. The government pays the rest of the actuarial premium.",
+ "eligibility_summary":"All farmers growing notified crops in notified areas, including tenant farmers and sharecroppers.",
+ "tags":["Farmers","Tenants covered"],"occupations":["farmer"],
+ "documents":[{"name":"Land record or tenancy agreement","detail":"For the insured area."},{"name":"Sowing certificate","detail":"Where required by state."},{"name":"Bank account","detail":"For claim payment."}],
+ "steps":[{"title":"Enrol","detail":"Through your bank, CSC or pmfby.gov.in before the cut-off date."},{"title":"Report loss","detail":"Report localised loss within 72 hours via the Crop Insurance app or 14447."}],
+ "official_url":"https://pmfby.gov.in","helpline":"14447","apply_mode":"both","deadline_note":"Kharif: usually by 31 July · Rabi: usually by 31 December","popularity":67},
+
+{"slug":"kisan-credit-card","name":"Kisan Credit Card","short_name":"KCC","ministry":"Ministry of Agriculture & Farmers Welfare","level":"central","category":"agriculture","benefit_types":["loan","subsidy"],
+ "benefit_label":"Concessional farm credit","benefit_headline":"Loan at 4% interest","benefit_note":"7% interest with 3% prompt-repayment incentive, limit up to ₹5 lakh","benefit_value":500000,
+ "summary":"Easy, cheap credit for seeds, fertiliser, livestock and fisheries.",
+ "description":"KCC gives farmers, fishers and animal-husbandry farmers a revolving credit limit. Under the interest subvention scheme the effective rate is 4% for timely repayment. Loans up to ₹2 lakh need no collateral.",
+ "eligibility_summary":"Farmers (owners, tenants, sharecroppers), fishers and animal-husbandry farmers.",
+ "tags":["Farmers","Fishers","Collateral-free ≤ ₹2L"],"occupations":["farmer"],
+ "documents":[{"name":"Land records","detail":"Or tenancy proof."},{"name":"Aadhaar and photo","detail":"KYC."}],
+ "steps":[{"title":"Apply","detail":"At any bank branch or through PM-KISAN portal's KCC form."},{"title":"Card issued","detail":"Usually within 14 days."}],
+ "official_url":"https://www.myscheme.gov.in/schemes/kcc","helpline":"155261","apply_mode":"offline","popularity":63},
+
+{"slug":"pm-matru-vandana","name":"Pradhan Mantri Matru Vandana Yojana","local_name":"प्रधानमंत्री मातृ वंदना योजना","short_name":"PMMVY","ministry":"Ministry of Women & Child Development","level":"centrally_sponsored","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Maternity benefit","benefit_headline":"₹5,000 – ₹6,000","benefit_note":"₹5,000 for the first child; ₹6,000 if the second child is a girl","benefit_value":6000,"annual_cash":5000,
+ "summary":"Cash support for pregnant women and new mothers to rest and eat well.",
+ "description":"PMMVY pays ₹5,000 for the first child in two instalments after pregnancy registration, ante-natal check-ups, birth registration and vaccination. For a second child who is a girl, ₹6,000 is paid after birth.",
+ "eligibility_summary":"Pregnant women and lactating mothers aged 19+, except those in regular government jobs.",
+ "tags":["Pregnant women","Age 19+"],"min_age":19,"genders":["female"],"requires_flags":["expecting_mother"],"excludes_flags":["govt_employee"],
+ "documents":[{"name":"MCP card","detail":"Mother and Child Protection card."},{"name":"Aadhaar and bank account","detail":"Aadhaar-seeded."}],
+ "steps":[{"title":"Register","detail":"At your Anganwadi / health centre or pmmvy.wcd.gov.in."},{"title":"Get instalments","detail":"Paid after each condition is met."}],
+ "official_url":"https://pmmvy.wcd.gov.in","helpline":"14408","apply_mode":"both","is_dbt":true,"popularity":61},
+
+{"slug":"pm-garib-kalyan-anna","name":"PM Garib Kalyan Anna Yojana (NFSA free ration)","short_name":"PMGKAY","ministry":"Department of Food & Public Distribution","level":"central","category":"food","benefit_types":["in_kind"],
+ "benefit_label":"Free food grains","benefit_headline":"5 kg / person / month","benefit_note":"Antyodaya families get 35 kg per family per month","benefit_value":0,
+ "summary":"Free rice or wheat every month for ration card holders under the Food Security Act.",
+ "description":"Priority households get 5 kg of free food grains per person per month and Antyodaya Anna Yojana families get 35 kg per family, through fair price shops. One Nation One Ration Card lets you collect anywhere in India.",
+ "eligibility_summary":"Families holding Priority Household (PHH) or Antyodaya (AAY) ration cards.",
+ "tags":["Ration card","ONORC portable"],"requires_flags":["bpl"],
+ "documents":[{"name":"Ration card","detail":"PHH or AAY."},{"name":"Aadhaar","detail":"For biometric authentication at the shop."}],
+ "steps":[{"title":"Get a ration card","detail":"Apply through your state food department."},{"title":"Collect grains","detail":"At any fair price shop with biometric check."}],
+ "official_url":"https://nfsa.gov.in","helpline":"1967","apply_mode":"offline","popularity":90},
+
+{"slug":"pm-vishwakarma","name":"PM Vishwakarma","short_name":"PM Vishwakarma","ministry":"Ministry of MSME","level":"central","category":"business","benefit_types":["loan","training","in_kind"],
+ "benefit_label":"Artisan support","benefit_headline":"Loans up to ₹3 lakh at 5%","benefit_note":"Plus ₹15,000 toolkit voucher and ₹500/day training stipend","benefit_value":300000,
+ "summary":"Recognition, training, toolkits and cheap loans for traditional artisans and craftspeople.",
+ "description":"Artisans in 18 trades — carpenters, blacksmiths, potters, tailors, cobblers, barbers and more — get a PM Vishwakarma certificate and ID, skill training with stipend, a toolkit e-voucher and collateral-free loans of ₹1 lakh and ₹2 lakh at 5% interest.",
+ "eligibility_summary":"Self-employed artisans aged 18+ in one of the 18 listed trades; one member per family.",
+ "tags":["Artisans","18 trades","5% interest"],"min_age":18,"requires_flags":["artisan"],"excludes_flags":["govt_employee"],
+ "documents":[{"name":"Aadhaar","detail":"Biometric verification at CSC."},{"name":"Bank account","detail":"For stipend and loan."}],
+ "steps":[{"title":"Register at CSC","detail":"With Aadhaar biometric."},{"title":"Verification","detail":"By Gram Panchayat / ULB and district committee."},{"title":"Training and benefits","detail":"Attend training, get toolkit and loan."}],
+ "official_url":"https://pmvishwakarma.gov.in","helpline":"1800-267-7777","apply_mode":"offline","popularity":57},
+
+{"slug":"pmkvy-4","name":"Pradhan Mantri Kaushal Vikas Yojana 4.0","short_name":"PMKVY 4.0","ministry":"Ministry of Skill Development & Entrepreneurship","level":"central","category":"education","benefit_types":["training"],
+ "benefit_label":"Free skill training","benefit_headline":"Free training + certificate","benefit_note":"Industry-recognised courses with placement support","benefit_value":0,
+ "summary":"Free short-term job training and government certification for young people.",
+ "description":"PMKVY 4.0 offers free short-term training, recognition of prior learning and courses in new-age skills like AI, drones and electronics, with certification and placement support.",
+ "eligibility_summary":"Indian youth aged 15–59 who are school/college dropouts, unemployed or looking to upskill.",
+ "tags":["Age 15–59","Free","Certificate"],"min_age":15,"max_age":59,"occupations":["unemployed","student","daily_wage","homemaker"],
+ "documents":[{"name":"Aadhaar","detail":"For registration."},{"name":"Education certificate","detail":"If required by course."}],
+ "steps":[{"title":"Register","detail":"On skillindiadigital.gov.in."},{"title":"Choose a course","detail":"At a nearby training centre."},{"title":"Get certified","detail":"After assessment."}],
+ "official_url":"https://www.skillindiadigital.gov.in","helpline":"1800-123-9626","apply_mode":"online","popularity":52},
+
+{"slug":"up-kanya-sumangala","name":"Mukhyamantri Kanya Sumangala Yojana","short_name":"MKSY","ministry":"Women & Child Development Dept., Uttar Pradesh","level":"state","state_code":"UP","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Support for daughters","benefit_headline":"₹25,000","benefit_note":"Paid in six stages from birth to graduation","benefit_value":25000,
+ "summary":"Uttar Pradesh pays ₹25,000 in stages to support a daughter from birth through her education.",
+ "description":"Instalments are paid at birth, full vaccination, admission to Class 1, Class 6, Class 9, and on passing Class 12 and joining graduation or diploma.",
+ "eligibility_summary":"UP families with annual income up to ₹3 lakh; up to two daughters per family.",
+ "tags":["UP residents","Girl child","Income < ₹3L"],"max_income":300000,"requires_flags":["girl_child"],
+ "documents":[{"name":"Residence proof","detail":"Uttar Pradesh."},{"name":"Income certificate","detail":"Up to ₹3 lakh."},{"name":"Girl's birth certificate","detail":"Required."}],
+ "steps":[{"title":"Apply online","detail":"On mksy.up.gov.in."},{"title":"Verification","detail":"By block / district officer."}],
+ "official_url":"https://mksy.up.gov.in","helpline":"181","apply_mode":"online","is_dbt":true,"popularity":54},
+
+{"slug":"mh-majhi-ladki-bahin","name":"Mukhyamantri Majhi Ladki Bahin Yojana","short_name":"Ladki Bahin","ministry":"Women & Child Development Dept., Maharashtra","level":"state","state_code":"MH","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Monthly support for women","benefit_headline":"₹1,500 / month","benefit_note":"Paid directly to Aadhaar-linked bank account","benefit_value":18000,"annual_cash":18000,
+ "summary":"Maharashtra pays ₹1,500 a month to women from low-income families.",
+ "description":"Married, widowed, divorced, abandoned or destitute women and one unmarried woman per family, aged 21–65, receive monthly financial support.",
+ "eligibility_summary":"Maharashtra women aged 21–65 with family income up to ₹2.5 lakh.",
+ "tags":["MH residents","Women 21–65","Income < ₹2.5L"],"min_age":21,"max_age":65,"max_income":250000,"genders":["female"],"excludes_flags":["income_taxpayer","govt_employee"],
+ "documents":[{"name":"Aadhaar and domicile","detail":"Maharashtra."},{"name":"Income certificate or yellow/orange ration card","detail":"Proof of income."}],
+ "steps":[{"title":"Apply","detail":"On ladakibahin.maharashtra.gov.in or via Anganwadi / setu kendra."},{"title":"Verification","detail":"By the WCD department."}],
+ "official_url":"https://ladakibahin.maharashtra.gov.in","helpline":"181","apply_mode":"both","is_dbt":true,"popularity":59},
+
+{"slug":"tn-magalir-urimai-thogai","name":"Kalaignar Magalir Urimai Thogai","short_name":"KMUT","ministry":"Government of Tamil Nadu","level":"state","state_code":"TN","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Monthly entitlement","benefit_headline":"₹1,000 / month","benefit_note":"For women heads of family","benefit_value":12000,"annual_cash":12000,
+ "summary":"Tamil Nadu pays ₹1,000 a month to women heads of eligible families.",
+ "description":"Women heads of families (as per the ration card) aged 21 and above in low-income households receive ₹1,000 a month by direct transfer.",
+ "eligibility_summary":"Tamil Nadu women heads of family, aged 21+, family income up to ₹2.5 lakh.",
+ "tags":["TN residents","Women","Income < ₹2.5L"],"min_age":21,"max_income":250000,"genders":["female"],"excludes_flags":["income_taxpayer","govt_employee"],
+ "documents":[{"name":"Ration card","detail":"Applicant listed as head."},{"name":"Aadhaar and bank account","detail":"Linked."}],
+ "steps":[{"title":"Apply","detail":"At camps or ration shops during enrolment drives."},{"title":"Check status","detail":"On kmut.tn.gov.in."}],
+ "official_url":"https://kmut.tn.gov.in","apply_mode":"offline","is_dbt":true,"popularity":47},
+
+{"slug":"wb-lakshmir-bhandar","name":"Lakshmir Bhandar","short_name":"Lakshmir Bhandar","ministry":"Women & Child Development Dept., West Bengal","level":"state","state_code":"WB","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Monthly support","benefit_headline":"₹1,000 – ₹1,200 / month","benefit_note":"₹1,200 for SC/ST women","benefit_value":14400,"annual_cash":12000,
+ "summary":"West Bengal gives women aged 25–60 a monthly basic income.",
+ "description":"Women in families enrolled in Swasthya Sathi receive ₹1,000 a month (₹1,200 for SC/ST women) directly in their bank accounts.",
+ "eligibility_summary":"West Bengal women aged 25–60 who are not in permanent government jobs.",
+ "tags":["WB residents","Women 25–60"],"min_age":25,"max_age":60,"genders":["female"],"excludes_flags":["govt_employee"],
+ "documents":[{"name":"Swasthya Sathi card","detail":"Or enrolment."},{"name":"Aadhaar and bank account","detail":"Linked."}],
+ "steps":[{"title":"Apply","detail":"At Duare Sarkar camps."}],
+ "official_url":"https://socialsecurity.wb.gov.in","apply_mode":"offline","is_dbt":true,"popularity":46},
+
+{"slug":"assam-orunodoi","name":"Orunodoi 3.0","short_name":"Orunodoi","ministry":"Finance Department, Government of Assam","level":"state","state_code":"AS","category":"women","benefit_types":["dbt"],
+ "benefit_label":"Monthly family support","benefit_headline":"₹1,250 / month","benefit_note":"Paid to the woman of the household","benefit_value":15000,"annual_cash":15000,
+ "summary":"Assam's monthly cash support for women of economically weaker families.",
+ "description":"Orunodoi transfers ₹1,250 a month to the woman member of eligible low-income households to help with medicines, food and nutrition.",
+ "eligibility_summary":"Assam households with annual income up to ₹2 lakh; benefit goes to the woman of the family.",
+ "tags":["Assam residents","Women","Income < ₹2L"],"max_income":200000,"genders":["female"],"excludes_flags":["income_taxpayer","govt_employee"],
+ "documents":[{"name":"Ration card / NFSA card","detail":"Assam."},{"name":"Aadhaar and bank account","detail":"Linked."}],
+ "steps":[{"title":"Apply","detail":"Through your Gram Panchayat / ward office during enrolment."},{"title":"Verification","detail":"By the district committee."}],
+ "official_url":"https://finance.assam.gov.in","apply_mode":"offline","is_dbt":true,"popularity":53},
+
+{"slug":"assam-nijut-moina","name":"Mukhya Mantri Nijut Moina","short_name":"Nijut Moina","ministry":"Education Department, Government of Assam","level":"state","state_code":"AS","category":"education","benefit_types":["dbt"],
+ "benefit_label":"Monthly stipend for girl students","benefit_headline":"₹1,000 – ₹2,500 / month","benefit_note":"Class 11: ₹1,000 · Degree: ₹1,250 · PG: ₹2,500 (10 months a year)","benefit_value":25000,"annual_cash":10000,
+ "summary":"Assam pays unmarried girl students a monthly stipend to keep studying from Class 11 to post-graduation.",
+ "description":"Girls studying in Class 11, degree and post-graduate courses in government or provincialised institutions in Assam get a monthly stipend for 10 months a year.",
+ "eligibility_summary":"Unmarried girl students in Assam from Class 11 to PG with family income up to ₹15 lakh.",
+ "tags":["Assam residents","Girl students"],"max_income":1500000,"genders":["female"],"occupations":["student"],
+ "documents":[{"name":"Admission proof","detail":"From your institution."},{"name":"Aadhaar and bank account","detail":"In the student's name."}],
+ "steps":[{"title":"Apply online","detail":"On the Nijut Moina portal during the application window."},{"title":"Institute verification","detail":"Your college verifies enrolment."}],
+ "official_url":"https://nijutmoina.assam.gov.in","apply_mode":"online","is_dbt":true,"popularity":49}
+]$seed$::jsonb) AS r;
+NOTIFY pgrst, 'reload schema';
