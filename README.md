@@ -1,29 +1,34 @@
-# Welcome to your Lovable project
+# SchemeSaathi — Welfare Scheme Finder
 
-This project was built with [Lovable](https://lovable.dev).
+A web app that helps citizens discover Indian government welfare schemes and see which ones fit their circumstances.
 
-## Build with Lovable
+## Features
+- **Find Schemes** — search and filter 33 Central and State schemes by sector, governing body, benefit type, income and social category.
+- **Eligibility quiz** — 4-step questionnaire with a live rules engine that matches answers against each scheme's published criteria.
+- **Scheme details** — benefits, eligibility & exclusions, document checklist, step-by-step application, FAQs, helplines and official links.
+- **Accounts** — email/password, Google and Lovable sign-in; save schemes, store quiz answers, track applications through 5 stages and log benefit payments.
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+## Tech stack
+- TanStack Start (React 19, file-based routing, server functions), Vite, Tailwind CSS v4, shadcn/ui
+- Lovable Cloud (Postgres + Auth) with row-level security
+- Vitest for the eligibility rule tests
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+## Project structure
+```
+src/routes/                 pages (index, categories, eligibility, schemes.$slug, auth, _authenticated/*)
+src/lib/eligibility.ts      matching rules engine
+src/lib/schemes.functions.ts  public catalogue server functions
+src/lib/account.functions.ts  signed-in server functions
+src/components/site/        header, footer, scheme card, dialogs
+drizzle/migrations/         database schema + scheme seed data
 ```
 
-## Built with
+## Running locally
+```bash
+bun install
+cp .env.example .env   # add your backend URL and publishable key
+bun run dev
+bun run test
+```
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+> SchemeSaathi is an independent guide, not an official government website. Always confirm details on the official scheme portal.

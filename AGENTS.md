@@ -28,3 +28,11 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Scheme catalogue lives in the `schemes` table and is read through public server functions in `src/lib/schemes.functions.ts` (publishable key, anon SELECT policy) so pages can SSR and be shared.
+- Eligibility matching is a pure function in `src/lib/eligibility.ts` (pass / fail / unknown per rule, derived flags for either-or rules); keep it UI-free and covered by `src/test/eligibility.test.ts`.
+- Signed-in data (profiles, saved schemes, applications, benefit payments) goes only through `requireSupabaseAuth` server functions in `src/lib/account.functions.ts`; tables are owner-only via RLS.
+- Signed-in pages live under `src/routes/_authenticated/`; public pages stay top-level.
+- The site must state it is not an official government website and link users to official portals for applying.

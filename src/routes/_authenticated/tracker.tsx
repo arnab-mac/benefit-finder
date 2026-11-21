@@ -105,7 +105,7 @@ function TrackerPage() {
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={ClipboardList} label="Active applications" value={`${active.length} in progress`} note={`${data.applications.length} tracked in total`} />
-          <StatCard icon={Wallet} label="Benefits received" value={formatINR(received)} note={`${data.payments.length} payments logged`} />
+          <StatCard icon={Wallet} label="Benefits received" value={formatINR(received)} note={`${data.payments.length} ${data.payments.length === 1 ? "payment" : "payments"} logged`} />
           <StatCard icon={Bookmark} label="Saved schemes" value={`${data.saved.length} bookmarked`} note="Ready when you are" />
           <StatCard icon={AlertCircle} label="Action pending" value={`${actionNeeded.length} required`} note={actionNeeded.length ? "Check the highlighted application" : "Nothing pending"} alert={actionNeeded.length > 0} />
         </div>
